@@ -175,30 +175,38 @@ def parse_products(html, category_name, limit):
         seen.add(pid)
 
         # Full text of the card carries all the visible info
-        card_text = a.get_text(" ", strip=True)
-
-        # --- Title: extract from card text between "add-to-cart" and rating/price ---
+        card_text = a.get_text("", strip=True)
+        # --- Title extraction: multi-strategy (works with Noon's compressed HTML) ---
         title = None
-        m = re.search(
-            r'add-to-cart\s+(.+?)(?=\s+[0-5]\.\d\s+[\d.]+[KMkm]?\s+EGP|\s+EGP\s)',
-            card_text
-        )
-        if m:
-            title = m.group(1).strip()
 
-        # Fallback: try img alt tags, skip "placeholder"
+        # Strategy A: try each img alt, skip placeholders
+        for img_tag in a.find_all("img"):
+            alt = (img_tag.get("alt") or "").strip()
+            if not alt or alt.lower() == "placeholder":
+                continue
+            alt_clean = re.sub(r'^placeholder\s*', '', alt).strip()
+            alt_clean = re.sub(r'\s*-\s*Image\s*\d+\s*$', '', alt_clean).strip()
+            if alt_clean and alt_clean.lower() != 'placeholder' and len(alt_clean) > 10:
+                title = alt_clean
+                break
+
+        # Strategy B: parse from card text (handles NO-whitespace case)
         if not title:
-            for img_tag in a.find_all("img"):
-                alt = (img_tag.get("alt") or "").strip()
-                alt = re.sub(r'^placeholder', '', alt).strip()
-                alt = re.sub(r'\s*-\s*Image\s*\d+\s*$', '', alt).strip()
-                if alt and alt.lower() != 'placeholder' and len(alt) > 10:
-                    title = alt
-                    break
+            for pattern in [
+                r'add-to-cart(.+?)(?=[0-5]\.\d[\d.]+[KMkm]?EGP)',
+                r'add-to-cart(.+?)(?=EGP)',
+            ]:
+                m = re.search(pattern, card_text)
+                if m:
+                    cand = m.group(1).strip()
+                    cand = re.sub(r'^(Best Seller|wishlist)\s*', '', cand).strip()
+                    cand = re.sub(r'\s*(Best Seller|wishlist)\s*$', '', cand).strip()
+                    if len(cand) > 10:
+                        title = cand
+                        break
 
         if not title:
-            title = card_text[:150]
-
+            title = card_text[:150] if card_text else "Unknown"
         # --- Price ---
         # Prices are wrapped in <strong> tags after "EGP"
         price = None
