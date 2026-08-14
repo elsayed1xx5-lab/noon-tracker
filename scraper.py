@@ -177,14 +177,27 @@ def parse_products(html, category_name, limit):
         # Full text of the card carries all the visible info
         card_text = a.get_text(" ", strip=True)
 
-        # --- Title: alt attribute of first product image (most reliable) ---
+        # --- Title: extract from card text between "add-to-cart" and rating/price ---
         title = None
-        img = a.find("img")
-        if img and img.get("alt"):
-            # alt often looks like "Product Name - Image 1"
-            title = re.sub(r"\s*-\s*Image\s*\d+\s*$", "", img["alt"]).strip()
+        m = re.search(
+            r'add-to-cart\s+(.+?)(?=\s+[0-5]\.\d\s+[\d.]+[KMkm]?\s+EGP|\s+EGP\s)',
+            card_text
+        )
+        if m:
+            title = m.group(1).strip()
+
+        # Fallback: try img alt tags, skip "placeholder"
         if not title:
-            title = card_text[:200]
+            for img_tag in a.find_all("img"):
+                alt = (img_tag.get("alt") or "").strip()
+                alt = re.sub(r'^placeholder', '', alt).strip()
+                alt = re.sub(r'\s*-\s*Image\s*\d+\s*$', '', alt).strip()
+                if alt and alt.lower() != 'placeholder' and len(alt) > 10:
+                    title = alt
+                    break
+
+        if not title:
+            title = card_text[:150]
 
         # --- Price ---
         # Prices are wrapped in <strong> tags after "EGP"
